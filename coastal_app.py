@@ -184,6 +184,13 @@ with st.sidebar:
     st.info("💡 TTP의 안정계수(Kd)는 쇄파대 판정 결과에 따라 **자동 산정**됩니다. (비쇄파: 8.0, 쇄파: 7.0)")
     Nod_ttp = st.number_input("VdM 상대피해율 Nod (0~0.5)", value=0.20, step=0.01)
     st.markdown("---")
+
+    # 새로 추가된 TTP 외 기타 소파블록 파라미터 섹션 (단위중량 22.6으로 변경됨)
+    st.header("5. TTP 외 소파블록(기타 블록) 파라미터")
+    gamma_other = st.number_input("단위중량 γ (kN/m³) [기타 블록]", value=22.6, step=0.1)
+    Kd_other = st.number_input("안정계수 Kd [기타 블록]", value=10.0, step=0.1)
+    st.info("💡 기타 소파블록은 입력하신 Kd 값을 바탕으로 **Hudson 공식**으로만 중량을 산출합니다.")
+    st.markdown("---")
     
     run_button = st.button("🚀 검토 실행 (Calculate)", type="primary", use_container_width=True)
 
@@ -201,21 +208,27 @@ if run_button:
     # 종합 쇄파대 판정 (보수적 적용)
     final_is_breaking = (status_spm != "비쇄파" or status_harbor != "비쇄파")
     
-    # 2. KD 값 자동 산정
+    # 2. KD 값 산정 (피복석, TTP는 자동 / 기타블록은 사용자 입력값 사용)
     Kd_rock = 2.0 if final_is_breaking else 4.0
     Kd_ttp = 7.0 if final_is_breaking else 8.0
     
     # 3. 피복재 중량 계산
     H_design = Hs  
     
+    # 피복석
     rock_h_weight, r_Sr = calc.calc_hudson(gamma_rock, H_design, Kd_rock, cot_alpha)
     rock_v_weight, r_type, _, r_Lom, r_sm, r_xim, r_ximc, r_Ns, r_Dn50 = calc.calc_vandermeer_rock(gamma_rock, Hs, Tz, cot_alpha, P_rock, S_rock, N_waves)
     
+    # TTP
     ttp_h_weight, t_Sr = calc.calc_hudson(gamma_ttp, H_design, Kd_ttp, cot_alpha)
     ttp_v_weight, _, t_Tm, t_Lom, t_sm, t_Ns, t_Dn = calc.calc_vandermeer_ttp(gamma_ttp, Hs, Tz, Nod_ttp, N_waves)
     
+    # 기타 블록 (Hudson Only)
+    other_h_weight, o_Sr = calc.calc_hudson(gamma_other, H_design, Kd_other, cot_alpha)
+    
     rock_final_kN = max(rock_h_weight, rock_v_weight)
     ttp_final_kN = max(ttp_h_weight, ttp_v_weight)
+    other_final_kN = other_h_weight  # 단일 공식 적용이므로 그대로 결정중량
 
     # ====================================================
     # UI 출력 - 요약 (비교표 추가)
@@ -234,9 +247,10 @@ if run_button:
             "| 구분 | Hudson 공식 | Van der Meer 공식 | **결정중량(MAX)** |\n"
             "|:---:|:---:|:---:|:---:|\n"
             f"| **피복석** | {rock_h_weight:,.1f} kN | {rock_v_weight:,.1f} kN | **{rock_final_kN:,.1f} kN** |\n"
-            f"| **소파블록** | {ttp_h_weight:,.1f} kN | {ttp_v_weight:,.1f} kN | **{ttp_final_kN:,.1f} kN** |"
+            f"| **소파블록(TTP)** | {ttp_h_weight:,.1f} kN | {ttp_v_weight:,.1f} kN | **{ttp_final_kN:,.1f} kN** |\n"
+            f"| **기타 블록** | {other_h_weight:,.1f} kN | - | **{other_final_kN:,.1f} kN** |"
         )
-        st.markdown(f"*(적용 $K_D$: 피복석 **{Kd_rock:.1f}**, 소파블록 **{Kd_ttp:.1f}**)*")
+        st.markdown(f"*(적용 $K_D$: 피복석 **{Kd_rock:.1f}**, TTP **{Kd_ttp:.1f}**, 기타블록 **{Kd_other:.1f}**)*")
 
     st.markdown("---")
     
@@ -258,7 +272,6 @@ if run_button:
     st.markdown(rf"- 파형경사 파라미터 $H_0' / (g \cdot T^2) = {H0_prime:.3f} / (9.81 \times {Tz}^2) = {X_h0:.5f}$")
     st.markdown(rf"- 도표 독취 역산 계수 $H_b / H_0' = {Hb_ratio:.3f}$")
     st.markdown(rf"- 산출된 쇄파고 $H_b = {Hb_ratio:.3f} \times {H0_prime:.3f} = {Hb:.3f} \text{{ m}}$")
-    # 해저경사 보간법 설명 추가
     st.markdown(rf"*(해저경사 m={m_slope} 등 도표에 직접 곡선이 표시되지 않은 경사는, 앵커 곡선 데이터를 바탕으로 수학적 2D 정밀 보간법을 사용하여 오차 없이 독취 및 산출하였습니다.)*")
     
     st.markdown("<br>", unsafe_allow_html=True)
@@ -301,7 +314,6 @@ if run_button:
     st.markdown(rf"- **설계파고($H_{{1/3}}$)**: $H_s = {H_design:.2f} \text{{ m}}$")
     st.markdown(rf"- **피복석 비중($S_r$)**: $\gamma_r / \gamma_w = {gamma_rock:.2f} / 10.1 = {r_Sr:.3f}$")
     
-    # HTML translate='no' 적용, 수식 내부 글자 분리(\mathrm{C}\kern0.1ex\mathrm{o}\kern0.1ex\mathrm{t})
     st.markdown(f"- **안정계수($K_D$)**: {Kd_rock:.1f} (판정결과 자동적용), **사면경사({html_cot} $\\alpha$)**: {cot_alpha}", unsafe_allow_html=True)
     st.latex(r"W = \frac{\gamma_r H^3}{K_D \cdot \mathrm{C}\kern0.1ex\mathrm{o}\kern0.1ex\mathrm{t}\,\alpha \cdot (S_r - 1)^3}")
     st.latex(rf"W = \frac{{{gamma_rock:.2f} \times {H_design:.2f}^3}}{{{Kd_rock:.1f} \times {cot_alpha} \times ({r_Sr:.3f} - 1)^3}} = {rock_h_weight:,.1f} \text{{ kN}}")
@@ -313,7 +325,6 @@ if run_button:
     st.markdown(rf"- **심해파장($L_{{om}}$)**: $g T_z^2 / 2\pi = 9.81 \times {Tz}^2 / 2\pi = {r_Lom:.2f} \text{{ m}}$")
     st.markdown(rf"- **파형경사($s_m$)**: $H_s / L_{{om}} = {Hs} / {r_Lom:.2f} = {r_sm:.4f}$")
     
-    # HTML translate='no' 적용, 루트 안 기호를 tan으로 변경
     st.markdown(f"- **쇄파유사도($\\xi_m$)**: {html_tan} $\\alpha / \\sqrt{{s_m}} = (1/{cot_alpha}) / \\sqrt{{{r_sm:.4f}}} = {r_xim:.3f}$", unsafe_allow_html=True)
     st.markdown(f"- **임계 쇄파유사도($\\xi_{{mc}}$)**: $(6.2 \\times P^{{0.31}} \\sqrt{{\\mathrm{{t}}\\kern0.1ex\\mathrm{{a}}\\kern0.1ex\\mathrm{{n}}\\,\\alpha}})^{{1/(P+0.5)}} = {r_ximc:.3f}$ (투과계수 P={P_rock})", unsafe_allow_html=True)
     
@@ -354,19 +365,35 @@ if run_button:
 
     st.markdown("---")
 
+    # ----------------------------------------------------
+    # 기타 소파블록 상세 계산 (추가된 부분)
+    # ----------------------------------------------------
+    st.markdown("### 사. 기타 소파블록 소요중량 산정")
+
+    st.markdown("#### 1) Hudson 공식에 의한 산정")
+    st.markdown(rf"- **설계파고($H_{{1/3}}$)**: $H_s = {H_design:.2f} \text{{ m}}$")
+    st.markdown(rf"- **기타 블록 비중($S_r$)**: $\gamma_r / \gamma_w = {gamma_other:.2f} / 10.1 = {o_Sr:.3f}$")
+    
+    st.markdown(f"- **안정계수($K_D$)**: {Kd_other:.1f} (사용자 입력), **사면경사({html_cot} $\\alpha$)**: {cot_alpha}", unsafe_allow_html=True)
+    st.latex(r"W = \frac{\gamma_r H^3}{K_D \cdot \mathrm{C}\kern0.1ex\mathrm{o}\kern0.1ex\mathrm{t}\,\alpha \cdot (S_r - 1)^3}")
+    st.latex(rf"W = \frac{{{gamma_other:.2f} \times {H_design:.2f}^3}}{{{Kd_other:.1f} \times {cot_alpha} \times ({o_Sr:.3f} - 1)^3}} = {other_h_weight:,.1f} \text{{ kN}}")
+    st.markdown("*(기타 소파블록은 설정에 따라 Hudson 공식만 적용하여 산출합니다.)*")
+
+    st.markdown("---")
+
     # ====================================================
-    # 엑셀 다운로드 (오류 방지를 위해 openpyxl 엔진 명시 및 태그 제거)
+    # 엑셀 다운로드 (기타 블록 결과 포함)
     # ====================================================
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         # 1. 요약 시트
         df_summary = pd.DataFrame({
-            "구분": ["Hs(m)", "수심(m)", "환산심해파고(m)", "SPM 판정", "설계기준 판정", "피복석(kN)", "TTP(kN)"],
-            "결과값": [Hs, depth, round(H0_prime, 3), status_spm, status_harbor, round(rock_final_kN, 1), round(ttp_final_kN, 1)]
+            "구분": ["Hs(m)", "수심(m)", "환산심해파고(m)", "SPM 판정", "설계기준 판정", "피복석(kN)", "TTP(kN)", "기타 블록(kN)"],
+            "결과값": [Hs, depth, round(H0_prime, 3), status_spm, status_harbor, round(rock_final_kN, 1), round(ttp_final_kN, 1), round(other_final_kN, 1)]
         })
         df_summary.to_excel(writer, index=False, sheet_name='요약(Summary)')
         
-        # 2. 상세풀이 시트 (HTML 태그가 포함되지 않은 순수 문자열 배열)
+        # 2. 상세풀이 시트
         detail_data = [
             ["[ 상세 검토 풀이과정 ]", ""],
             ["", ""],
@@ -426,7 +453,15 @@ if run_button:
             ["파형경사 (sm)", f"{t_sm:.4f}"],
             ["안정계수 (Ns)", f"{t_Ns:.3f}"],
             ["공칭직경 (Dn)", f"{t_Dn:.3f} m"],
-            ["소요중량 (W)", f"{ttp_v_weight:,.1f} kN"]
+            ["소요중량 (W)", f"{ttp_v_weight:,.1f} kN"],
+            ["", ""],
+            ["바. 기타 소파블록 소요중량 산정", ""],
+            ["[Hudson 공식 - 단독적용]", ""],
+            ["설계파고 (H1/3)", f"{H_design:.2f} m"],
+            ["기타 블록 비중 (Sr)", f"{o_Sr:.3f}"],
+            ["안정계수 (KD)", f"{Kd_other:.1f}"],
+            ["사면경사 (Cot a)", f"{cot_alpha}"],
+            ["소요중량 (W)", f"{other_h_weight:,.1f} kN"]
         ]
         
         df_detail = pd.DataFrame(detail_data, columns=["항목", "계산 및 결과값"])
