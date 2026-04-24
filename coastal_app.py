@@ -3,7 +3,11 @@ import math
 import pandas as pd
 import numpy as np
 from io import BytesIO
-
+with st.sidebar:
+    st.markdown("---")
+    st.write("**제작자:** [김창보]")
+    st.write("**소속:** [다온기술]")
+    st.caption("© 2026 All rights reserved.")
 class ArmorCalculator:
     def __init__(self):
         # 해수 단위중량 (kN/m³) - 10.1 적용
